@@ -40,6 +40,7 @@ class CartController extends Controller
                     'location' => $cart->location,
                     'mobile' => $cart->mobile,
                     'status' => $cart->status,
+                    'result' => $cart->result,
                     'created_at' => $cart->created_at,
                 ];
             });
@@ -65,6 +66,7 @@ class CartController extends Controller
                     'location' => $cart->location,
                     'mobile' => $cart->mobile,
                     'status' => $cart->status,
+                    'result' => $cart->result,
                     'created_at' => $cart->created_at,
                 ];
             });
@@ -116,6 +118,7 @@ class CartController extends Controller
             'location' => 'required|string|max:255',
             'mobile' => 'required|string|max:15',
             'status' => 'nullable|string|max:255', // validation لحقل status
+            'result' => 'nullable|string|max:255', // validation لحقل result
         ]);
 
         $errors = [];
@@ -146,6 +149,7 @@ class CartController extends Controller
             'location' => $request->location,
             'mobile' => $request->mobile,
             'status' => $request->status ?? 'pending', // إضافة status مع قيمة افتراضية 'pending'
+            'result' => $request->result ?? null,
         ]);
 
         return response()->json([
@@ -184,7 +188,8 @@ class CartController extends Controller
     public function updateStatus(Request $request, $userId, $cartId)
     {
         $request->validate([
-            'status' => 'required|string|max:255',
+            'status' => 'nullable|string|max:255',
+            'result' => 'nullable|string|max:255',
         ]);
 
         // التأكد من أن الـ cart ينتمي للمستخدم (للأمان)
@@ -194,9 +199,21 @@ class CartController extends Controller
             return response()->json(['message' => 'Cart not found or does not belong to the user'], 404);
         }
 
-        $cart->update(['status' => $request->status]);
+        $updateData = [];
+        if ($request->has('status')) {
+            $updateData['status'] = $request->status;
+        }
+        if ($request->has('result')) {
+            $updateData['result'] = $request->result;
+        }
 
-        return response()->json(['message' => 'Status updated successfully', 'cart' => $cart]);
+        if (empty($updateData)) {
+            return response()->json(['message' => 'Nothing to update'], 400);
+        }
+
+        $cart->update($updateData);
+
+        return response()->json(['message' => 'Cart updated successfully', 'cart' => $cart]);
     }
 
     /**

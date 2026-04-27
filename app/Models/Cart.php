@@ -9,7 +9,7 @@ class Cart extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['products', 'user_id', 'location', 'mobile', 'status'];
+    protected $fillable = ['products', 'user_id', 'location', 'mobile', 'status', 'result'];
 
     protected $casts = [
         'products' => 'array', // تحويل products إلى مصفوفة تلقائياً
