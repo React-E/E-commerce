@@ -9,12 +9,11 @@ class Cart extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['count', 'product_id', 'user_id', 'location', 'mobile'];
+    protected $fillable = ['products', 'user_id', 'location', 'mobile', 'status'];
 
-    public function Products()
-    {
-        return $this->belongsTo(Product::class, 'product_id');
-    }
+    protected $casts = [
+        'products' => 'array', // تحويل products إلى مصفوفة تلقائياً
+    ];
 
     public function Users()
     {

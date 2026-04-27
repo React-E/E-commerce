@@ -18,35 +18,56 @@ class CartController extends Controller
         $user = Auth::user();
 
         if ($user->role === '1995') {
-            // Admin: return all cart items grouped by user
-            $cartItems = Cart::with('Products', 'Users:id,name,email')
-                ->get()
-                ->groupBy('user_id')
-                ->map(function ($items, $userId) {
-                    $firstItem = $items->first();
-                    $userData = $firstItem->Users ? $firstItem->Users->toArray() : ['id' => $userId, 'name' => 'Unknown', 'email' => ''];
+            // Admin: return all carts with user info
+            $cartItems = Cart::with('Users:id,name,email')->get()->map(function ($cart) {
+                // جلب تفاصيل المنتجات
+                $productIds = collect($cart->products)->pluck('product_id')->toArray();
+                $productsDetails = Product::whereIn('id', $productIds)->get()->keyBy('id');
+
+                $productsWithDetails = collect($cart->products)->map(function ($item) use ($productsDetails) {
+                    $product = $productsDetails->get($item['product_id']);
                     return [
-                        'user_id' => $userId,
-                        'user' => array_merge($userData, [
-                            'location' => $firstItem->location,
-                            'mobile' => $firstItem->mobile,
-                        ]),
-                        'products' => $items->map(function ($item) {
-                            return [
-                                'id' => $item->id,
-                                'product_id' => $item->product_id,
-                                'count' => $item->count,
-                                'product' => $item->Products,
-                            ];
-                        }),
+                        'product_id' => $item['product_id'],
+                        'count' => $item['count'],
+                        'product' => $product ? $product->toArray() : null, // تفاصيل المنتج الكاملة
                     ];
-                })
-                ->values();
+                });
+
+                return [
+                    'id' => $cart->id,
+                    'user' => $cart->Users ? $cart->Users->toArray() : ['id' => $cart->user_id, 'name' => 'Unknown', 'email' => ''],
+                    'products' => $productsWithDetails,
+                    'location' => $cart->location,
+                    'mobile' => $cart->mobile,
+                    'status' => $cart->status,
+                    'created_at' => $cart->created_at,
+                ];
+            });
         } else {
-            // Regular user: return only their cart items
-            $cartItems = Cart::with('Products')
-                ->where('user_id', $user->id)
-                ->get();
+            // Regular user: return only their carts
+            $cartItems = Cart::where('user_id', $user->id)->get()->map(function ($cart) {
+                // جلب تفاصيل المنتجات
+                $productIds = collect($cart->products)->pluck('product_id')->toArray();
+                $productsDetails = Product::whereIn('id', $productIds)->get()->keyBy('id');
+
+                $productsWithDetails = collect($cart->products)->map(function ($item) use ($productsDetails) {
+                    $product = $productsDetails->get($item['product_id']);
+                    return [
+                        'product_id' => $item['product_id'],
+                        'count' => $item['count'],
+                        'product' => $product ? $product->toArray() : null,
+                    ];
+                });
+
+                return [
+                    'id' => $cart->id,
+                    'products' => $productsWithDetails,
+                    'location' => $cart->location,
+                    'mobile' => $cart->mobile,
+                    'status' => $cart->status,
+                    'created_at' => $cart->created_at,
+                ];
+            });
         }
 
         return response()->json($cartItems);
@@ -92,12 +113,13 @@ class CartController extends Controller
             'items' => 'required|array|min:1',
             'items.*.count' => 'required|numeric|min:1',
             'items.*.product_id' => 'required|exists:products,id',
-            'items.*.location' => 'required|string|max:255', // validation للموقع
-            'items.*.mobile' => 'required|string|max:15', // validation لرقم الموبايل
+            'location' => 'required|string|max:255',
+            'mobile' => 'required|string|max:15',
+            'status' => 'nullable|string|max:255', // validation لحقل status
         ]);
 
         $errors = [];
-        $successMessages = [];
+        $productsArray = [];
 
         foreach ($request->items as $item) {
             $product = Product::find($item['product_id']);
@@ -106,42 +128,30 @@ class CartController extends Controller
                 continue;
             }
 
-            $cart = Cart::where('user_id', Auth::id())
-                ->where('product_id', $item['product_id'])
-                ->first();
-
-            if ($cart) {
-                $newCount = $cart->count + $item['count'];
-                $cart->update([
-                    'count' => $newCount,
-                    'location' => $item['location'] ?? $cart->location, // تحديث الموقع إذا تم إرساله
-                    'mobile' => $item['mobile'] ?? $cart->mobile, // تحديث الموبايل إذا تم إرساله
-                ]);
-                $successMessages[] = "Cart updated for product {$item['product_id']}";
-            } else {
-                Cart::create([
-                    'count' => $item['count'],
-                    'user_id' => Auth::user()->id,
-                    'product_id' => $item['product_id'],
-                    'location' => $item['location'] ?? null, // إضافة الموقع
-                    'mobile' => $item['mobile'] ?? null, // إضافة الموبايل
-                ]);
-                $successMessages[] = "Cart created for product {$item['product_id']}";
-            }
+            // إضافة المنتج إلى المصفوفة
+            $productsArray[] = [
+                'product_id' => $item['product_id'],
+                'count' => $item['count'],
+            ];
         }
 
         if (!empty($errors)) {
-            return response()->json(['errors' => $errors, 'success' => $successMessages], 400);
+            return response()->json(['errors' => $errors], 400);
         }
 
-        // جلب السلة المحدثة مع تفاصيل المنتجات
-        $updatedCart = Cart::with('Products')->where('user_id', Auth::id())->get();
+        // إنشاء صف جديد دائماً
+        $cart = Cart::create([
+            'user_id' => Auth::user()->id,
+            'products' => $productsArray,
+            'location' => $request->location,
+            'mobile' => $request->mobile,
+            'status' => $request->status ?? 'pending', // إضافة status مع قيمة افتراضية 'pending'
+        ]);
 
         return response()->json([
-            'message' => 'All items processed successfully',
-            'success' => $successMessages,
-            'cart' => $updatedCart
-        ], 200);
+            'message' => 'Cart created successfully',
+            'cart' => $cart
+        ], 201);
     }
 
     /**
@@ -166,6 +176,27 @@ class CartController extends Controller
     public function update(Request $request, Cart $cart)
     {
         //
+    }
+
+    /**
+     * Update the status of a specific cart for a user.
+     */
+    public function updateStatus(Request $request, $userId, $cartId)
+    {
+        $request->validate([
+            'status' => 'required|string|max:255',
+        ]);
+
+        // التأكد من أن الـ cart ينتمي للمستخدم (للأمان)
+        $cart = Cart::where('id', $cartId)->where('user_id', $userId)->first();
+
+        if (!$cart) {
+            return response()->json(['message' => 'Cart not found or does not belong to the user'], 404);
+        }
+
+        $cart->update(['status' => $request->status]);
+
+        return response()->json(['message' => 'Status updated successfully', 'cart' => $cart]);
     }
 
     /**

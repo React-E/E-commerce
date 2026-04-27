@@ -81,6 +81,7 @@ Route::middleware('auth:api')->group(function () {
 
     Route::post('/cart', [CartController::class, 'store']);
     Route::get('/cart', [CartController::class, 'index']);
+    Route::put('/cart/{userId}/{cartId}/status', [CartController::class, 'updateStatus']); // route جديد لتحديث status
 
     // Auth
     Route::get('/logout', [AuthController::class, 'logout']);
