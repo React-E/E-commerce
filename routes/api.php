@@ -82,6 +82,7 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/cart', [CartController::class, 'store']);
     Route::get('/cart', [CartController::class, 'index']);
     Route::put('/cart/{userId}/{cartId}/status', [CartController::class, 'updateStatus']); // route جديد لتحديث status
+    Route::delete('/cart/{cartId}', [CartController::class, 'destroy']); // route جديد لحذف cart حسب id
 
     // Auth
     Route::get('/logout', [AuthController::class, 'logout']);

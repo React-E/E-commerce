@@ -200,10 +200,24 @@ class CartController extends Controller
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Remove the specified cart from storage.
      */
-    public function destroy(Cart $cart)
+    public function destroy($cartId)
     {
-        //
+        $user = Auth::user();
+
+        $cart = Cart::where('id', $cartId)
+            ->when($user->role !== '1995', function ($query) use ($user) {
+                return $query->where('user_id', $user->id);
+            })
+            ->first();
+
+        if (!$cart) {
+            return response()->json(['message' => 'Cart not found or not authorized'], 404);
+        }
+
+        $cart->delete();
+
+        return response()->json(['message' => 'Cart deleted successfully']);
     }
 }
