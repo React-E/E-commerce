@@ -17,10 +17,34 @@ class CartController extends Controller
     {
         $user = Auth::user();
 
-        if ($user->role === '1995') {
-            // Admin: return all carts with user info
+        if ($user->role === '2001') {
+            // User with role 2001: return only their own carts
+            $cartItems = Cart::where('user_id', $user->id)->get()->map(function ($cart) {
+                $productIds = collect($cart->products)->pluck('product_id')->toArray();
+                $productsDetails = Product::whereIn('id', $productIds)->get()->keyBy('id');
+
+                $productsWithDetails = collect($cart->products)->map(function ($item) use ($productsDetails) {
+                    $product = $productsDetails->get($item['product_id']);
+                    return [
+                        'product_id' => $item['product_id'],
+                        'count' => $item['count'],
+                        'product' => $product ? $product->toArray() : null,
+                    ];
+                });
+
+                return [
+                    'id' => $cart->id,
+                    'products' => $productsWithDetails,
+                    'location' => $cart->location,
+                    'mobile' => $cart->mobile,
+                    'status' => $cart->status,
+                    'result' => $cart->result,
+                    'created_at' => $cart->created_at,
+                ];
+            });
+        } else {
+            // Other roles: return all carts with user info
             $cartItems = Cart::with('Users:id,name,email')->get()->map(function ($cart) {
-                // جلب تفاصيل المنتجات
                 $productIds = collect($cart->products)->pluck('product_id')->toArray();
                 $productsDetails = Product::whereIn('id', $productIds)->get()->keyBy('id');
 
@@ -36,32 +60,6 @@ class CartController extends Controller
                 return [
                     'id' => $cart->id,
                     'user' => $cart->Users ? $cart->Users->toArray() : ['id' => $cart->user_id, 'name' => 'Unknown', 'email' => ''],
-                    'products' => $productsWithDetails,
-                    'location' => $cart->location,
-                    'mobile' => $cart->mobile,
-                    'status' => $cart->status,
-                    'result' => $cart->result,
-                    'created_at' => $cart->created_at,
-                ];
-            });
-        } else {
-            // Regular user: return only their carts
-            $cartItems = Cart::where('user_id', $user->id)->get()->map(function ($cart) {
-                // جلب تفاصيل المنتجات
-                $productIds = collect($cart->products)->pluck('product_id')->toArray();
-                $productsDetails = Product::whereIn('id', $productIds)->get()->keyBy('id');
-
-                $productsWithDetails = collect($cart->products)->map(function ($item) use ($productsDetails) {
-                    $product = $productsDetails->get($item['product_id']);
-                    return [
-                        'product_id' => $item['product_id'],
-                        'count' => $item['count'],
-                        'product' => $product ? $product->toArray() : null,
-                    ];
-                });
-
-                return [
-                    'id' => $cart->id,
                     'products' => $productsWithDetails,
                     'location' => $cart->location,
                     'mobile' => $cart->mobile,
@@ -159,11 +157,25 @@ class CartController extends Controller
     }
 
     /**
-     * Display the specified resource.
+     * Display the specified cart for the authenticated user.
      */
-    public function show(Cart $cart)
+    public function show($cartId)
     {
-        //
+        $user = Auth::user();
+
+        if ($user->role === '2001') {
+            $cart = Cart::where('id', $cartId)
+                ->where('user_id', $user->id)
+                ->first();
+        } else {
+            $cart = Cart::find($cartId);
+        }
+
+        if (!$cart) {
+            return response()->json(['message' => 'Cart not found'], 404);
+        }
+
+        return response()->json($cart);
     }
 
     /**
@@ -185,18 +197,23 @@ class CartController extends Controller
     /**
      * Update the status of a specific cart for a user.
      */
-    public function updateStatus(Request $request, $userId, $cartId)
+    public function updateStatus(Request $request, $cartId)
     {
         $request->validate([
             'status' => 'nullable|string|max:255',
             'result' => 'nullable|string|max:255',
         ]);
 
-        // التأكد من أن الـ cart ينتمي للمستخدم (للأمان)
-        $cart = Cart::where('id', $cartId)->where('user_id', $userId)->first();
+        $user = Auth::user();
+
+        if ($user->role === '2001') {
+            $cart = Cart::where('id', $cartId)->where('user_id', $user->id)->first();
+        } else {
+            $cart = Cart::find($cartId);
+        }
 
         if (!$cart) {
-            return response()->json(['message' => 'Cart not found or does not belong to the user'], 404);
+            return response()->json(['message' => 'Cart not found or not authorized'], 404);
         }
 
         $updateData = [];
@@ -223,11 +240,13 @@ class CartController extends Controller
     {
         $user = Auth::user();
 
-        $cart = Cart::where('id', $cartId)
-            ->when($user->role !== '1995', function ($query) use ($user) {
-                return $query->where('user_id', $user->id);
-            })
-            ->first();
+        if ($user->role === '2001') {
+            $cart = Cart::where('id', $cartId)
+                ->where('user_id', $user->id)
+                ->first();
+        } else {
+            $cart = Cart::find($cartId);
+        }
 
         if (!$cart) {
             return response()->json(['message' => 'Cart not found or not authorized'], 404);
